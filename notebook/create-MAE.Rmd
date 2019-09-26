@@ -111,7 +111,6 @@ lapply(metab_list, function(x) sum(! gsub(pattern = "_.*$", "", x = colnames(x))
 View(metab_list[[1]][1:10,1:10])
 ```
 
-<!-- [#Antoine: this dataset is using the sample_id, do we need the new_ID? We can use different names for samples across assays and create a sampleMap that defines it, but is this necessary or should we just harmonise them all?] -->
 
 ```{r}
 ## check that new ID is same as subjectid_visitnumber
@@ -148,7 +147,6 @@ wgs_list <- lapply(wgs_list, function(x) set_colnames(x, gsub(pattern = "^X",rep
 ```
 
 ```{r}
-## [#Antoine: why are the column names (which I assume are supposed to be new_ID) sometimes using sample_id and sometimes subject_id?]
 View(wgs_list[[3]][1:10,1:10])
 ```
 
@@ -187,7 +185,9 @@ head(wgs_mismatch$genefamilies$ecs)
  Are these valid new_ID's?
  
 ```{r}
-sum(wgs_mismatch$genefamilies$ecs %in% metadata$new_ID)
+##TODO There are no metadata available for these samples
+## number of samples in each dataset not present in metadata$new_ID
+lapply(wgs_list, function(x) sum(! colnames(x) %in% metadata$new_ID))
 ```
 
 Doesn't look like it
@@ -197,9 +197,6 @@ Doesn't look like it
 ## number of genefamilies samples present in metadata
 sum(colnames(wgs_list$genefamilies) %in% metadata$new_ID)
 ```
-
-[#Antoine: there seems to be a lot of samples in WGS dataset with no metadata]
-
 
 Shared samples with metabolites:
 
@@ -250,6 +247,12 @@ prot_list <- prot_list[4:5]
 
 ## adding 'prot_' to names to distinguish in MAE object
 names(prot_list) %<>% paste0("prot_", .)
+```
+
+```{r}
+##TODO There are no metadata available for these samples
+## number of samples in each dataset not present in metadata$new_ID
+lapply(prot_list, function(x) sum(! colnames(x) %in% metadata$new_ID))
 ```
 
 Create MAE object:
