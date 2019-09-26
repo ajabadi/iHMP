@@ -72,6 +72,7 @@ Read files:
 
 ```{r}
 metadata <- data.frame(fread(metadata_file))
+metadata$new_ID <- paste0(metadata$sample_id, "_", metadata$visit_number)
 ```
 
 ```{r}
