@@ -1,0 +1,264 @@
+---
+title: "create MAE"
+output: html_document
+---
+
+```{r}
+if (!requireNamespace('BiocManager'))
+  install.packages('BiocManager')
+
+if (!requireNamespace('MultiAssayExperiment'))
+  BiocManager::install('MultiAssayExperiment')
+
+if (!requireNamespace('data.table'))
+  install.packages('data.table')
+```
+```{r}
+library(MultiAssayExperiment)
+library(data.table)
+library(magrittr)
+```
+
+Helper functions:
+
+```{r}
+## functions to get number of common samples/features for two datasets
+scom <- function(x,y) sum(colnames(x) %in% colnames(y))
+fcom <- function(x,y) sum(rownames(x) %in% rownames(y))
+
+## functions to get names of mismatching samples for two datasets
+smismatch <- function(x,y) colnames(x)[!colnames(x) %in% colnames(y)]
+
+## pairwise common samples for a list of datasets
+scom_list <- function(data_list1, data_list2 = data_list1) sapply(data_list1, function(x) sapply(data_list2, function(y) scom(x, y)))
+
+## pairwise common feartures for a list of datasets
+fcom_list <- function(data_list1, data_list2 = data_list1) sapply(data_list1, function(x) sapply(data_list2, function(y)fcom(x, y)))
+
+name_mismatch <- function(data_list1, data_list2=data_list1) lapply(data_list1, function(x) lapply(data_list2, function(y)smismatch(x, y)))
+
+## function to read tsv files into data.frames with first column as rownames
+fread_tsv <- function(file_list) {
+  out <- lapply(file_list, function(x) as.matrix(data.frame(fread(x), row.names = 1)))
+  ## name the list with file name
+  names(out) <- gsub(".tsv", "", basename(file_list))
+  out
+}
+```
+
+# To DO
+
+----
+* Why are there no metadata for metabolomics data?
+* See why metadata is missing a lot of sample names in WGS data, and why there are duplicates
+
+----
+
+# Data
+
+File names:
+
+```{r}
+## input
+metab_files <- list.files(path = '../data/merged_Metabolomics/', full.names = TRUE)
+wgs_files <- list.files(path = '../data/Merged_WGS/', full.names = TRUE)
+metadata_file <- '../data/metadata.tsv'
+prot_files <- list.files('../data/Proteomics/', full.names = TRUE)
+```
+
+Read files:
+
+## metadata
+
+```{r}
+metadata <- data.frame(fread(metadata_file))
+```
+
+```{r}
+##TODO Why are there duplicate metadata
+## duplicate metadata
+sum(duplicated(metadata))
+```
+
+
+## Metabolomic
+
+```{r}
+## read files as named list
+metab_list <- fread_tsv(metab_files)
+```
+
+```{r}
+## unintended X added to colnames with subject_id that start with numbers
+lapply(metab_list, function(x) grep(pattern = "^X", colnames(x)))
+## drop it
+metab_list <- lapply(metab_list, function(x) set_colnames(x, gsub(pattern = "^X",replacement = "", colnames(x))))
+```
+
+Check all samples have metadata:
+
+```{r}
+##TODO There are no metadata available for these samples
+## number of samples in each dataset not present in metadata$new_ID
+lapply(metab_list, function(x) sum(! colnames(x) %in% metadata$new_ID))
+
+## number of trimmed sample names (no visit) in each dataset not present in metadata$sample_id
+lapply(metab_list, function(x) sum(! gsub(pattern = "_.*$", "", x = colnames(x)) %in% metadata$sample_id))
+## so all samples are valid, only their visit record is not there
+```
+
+```{r}
+View(metab_list[[1]][1:10,1:10])
+```
+
+<!-- [#Antoine: this dataset is using the sample_id, do we need the new_ID? We can use different names for samples across assays and create a sampleMap that defines it, but is this necessary or should we just harmonise them all?] -->
+
+```{r}
+## check that new ID is same as subjectid_visitnumber
+sum(metadata$new_ID != paste0(metadata$subject_id, "_", metadata$visit_number))
+```
+
+```{r}
+## common samples
+scom_list(metab_list)
+## common features
+fcom_list(metab_list)
+```
+
+```{r}
+## adding 'metab_' to names to distinguish in MAE object
+names(metab_list) %<>% paste0("metab_", .)
+```
+
+
+## WGS
+
+Same with WGS data:
+
+```{r}
+## read files as named list
+wgs_list <- fread_tsv(wgs_files)
+```
+
+```{r}
+## unintended X added to colnames with subject_id that start with numbers
+lapply(wgs_list, function(x) grep(pattern = "^X", colnames(x)))
+## drop it
+wgs_list <- lapply(wgs_list, function(x) set_colnames(x, gsub(pattern = "^X",replacement = "", colnames(x))))
+```
+
+```{r}
+## [#Antoine: why are the column names (which I assume are supposed to be new_ID) sometimes using sample_id and sometimes subject_id?]
+View(wgs_list[[3]][1:10,1:10])
+```
+
+```{r}
+## common samples
+scom_list(wgs_list)
+## common features
+fcom_list(wgs_list)
+```
+
+What are the non-matching ones?
+
+```{r}
+wgs_mismatch <- name_mismatch(wgs_list)
+```
+
+```{r}
+## one-by-one mismatches can be inspected as follows:
+## for pathcoverage and pathabundance
+wgs_mismatch$pathcoverage$pathabundance
+## this suggests there's been 2 NA's in headers of one dataset
+
+wgs_mismatch$pathcoverage$WGS_community
+## this suggests there's been 2 NA's in headers of one dataset, plus an extra sample
+## which does not exist in metadata:
+"1419f08f554e0c93f3b62fe90c246a08_13" %in% metadata$new_ID
+```
+
+The main mismatch comes from ecs (~210 samples):
+
+```{r}
+## those from genefamilies not present in ecs
+head(wgs_mismatch$genefamilies$ecs)
+```
+
+ Are these valid new_ID's?
+ 
+```{r}
+sum(wgs_mismatch$genefamilies$ecs %in% metadata$new_ID)
+```
+
+Doesn't look like it
+
+
+```{r}
+## number of genefamilies samples present in metadata
+sum(colnames(wgs_list$genefamilies) %in% metadata$new_ID)
+```
+
+[#Antoine: there seems to be a lot of samples in WGS dataset with no metadata]
+
+
+Shared samples with metabolites:
+
+```{r}
+## common samples b/w WGS (~300) and metabolomics (545)
+scom_list(wgs_list, metab_list)
+```
+
+[#Antoine] we noticed that there were `NA`s in original files that lead to weird namings by `fread`. Also you can see the `ecs` data does not share a lot of samples with others. Can you please let me know if I have to i) drop `ecs` dataset and ii) drop some non-matching samples from other datasets?
+
+I'm assuming these are separate data so I don't worry about common features.
+
+```{r}
+## adding 'WGS_' to names to distinguish in MAE object
+## exclude WGS_community
+names(wgs_list) <- gsub(".tsv", "", basename(wgs_files))
+names(wgs_list) %<>% paste0("WGS_", .)
+## last one does already have WGS prefix
+names(wgs_list)[5] <- gsub(".tsv", "", basename(wgs_files)[5])
+names(wgs_list)
+```
+
+
+## Proteomic
+
+```{r}
+## read files as named list
+prot_list <- fread_tsv(prot_files)
+```
+
+```{r}
+## this one seems to use new_ID = paste0(sample_id,"_",visit)?
+View(prot_list[[1]][1:10,1:10])
+```
+
+```{r}
+## common samples
+scom_list(prot_list)
+## common features
+fcom_list(prot_list)
+```
+
+[#Antoine] So I'm going with the one from `pep` ones. Also keeping the `kos` one as separate dataset, right?
+
+```{r}
+## keeping 2pep_5p_FDR_5ppm and kos datasets
+prot_list <- prot_list[4:5]
+
+## adding 'prot_' to names to distinguish in MAE object
+names(prot_list) %<>% paste0("prot_", .)
+```
+
+Create MAE object:
+
+```{r}
+iHMP <- MultiAssayExperiment(experiments = ExperimentList(c(prot_list, wgs_list, metab_list))
+                     #, colData = data.frame(metadata, row.names = "new_ID") ## this should use a row.name that matches the sample names - not possible at the moment because there are a lot of duplicated and we don't know which ones we wanna use
+                     # as sample names
+                     )
+```
+
+

@@ -1,0 +1,8 @@
+/ibd/genome/microbiome/16s/analysis/hmqcp/
+/ibd/metatranscriptome/microbiome/analysis/
+/ibd/transcriptome/host/analysis/
+/ibd/proteome/microbiome/analysis/
+/ibd/metatranscriptome/microbiome/analysis/
+/ibd/genome/microbiome/wgs/analysis/hmmrc/
+/ibd/genome/microbiome/wgs/analysis/hmscp/
+/ibd/metabolome/microbiome/analysis/

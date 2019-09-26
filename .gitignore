@@ -1,0 +1,17 @@
+.DS_Store
+.Rproj.user
+.Rproj.user
+.Ruserdata
+.Rhistory
+
+**/*_files
+**/*_cache
+**/*.rds
+**/*.RData
+
+**/*.log
+
+!**/README*
+
+## too large for GitHub
+data/Merged_WGS/genefamilies.tsv

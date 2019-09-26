@@ -1,0 +1,652 @@
+```{r}
+knitr::opts_chunk$set(warning=FALSE, message=FALSE)
+```
+
+
+```{r, message=F, warning=FALSE}
+library(tidyverse)
+
+filnames <- c("hmp_cart_metadata_16S_community.tsv", "hmp_cart_metadata_host_trans.tsv", "hmp_cart_metadata_micro_metabo.tsv", "hmp_cart_metadata_micro_metatrans.tsv",
+"hmp_cart_metadata_micro_proteo.tsv", "hmp_cart_metadata_wgs_community.tsv", "hmp_cart_metadata_wgs_functionnal.tsv")
+data_type <- c("16S", "HTX", "Metabolomics", "MTX", "Proteomics", "WGS_community", "WGS_functional")
+
+# read metadata
+metadata <- lapply(seq_along(filnames), function(i) read_tsv(filnames[i]) %>% 
+                       dplyr::select(sample_id,subject_id,sample_body_site,visit_number,subject_gender,subject_race, visit_study_disease_name, visit_hbi_total, visit_sccai_total) %>% 
+                       mutate(data_type = data_type[i]) %>%
+                       mutate(visit_study_disease_name = ifelse(is.na(visit_study_disease_name), "nonIBD", ifelse(visit_study_disease_name =="crohn's disease", "CD", "UC"))))
+metadata <- do.call("rbind", metadata)
+```
+
+```{r, fig.align="center", fig.height=8, fig.width=10}
+dat <- metadata %>% group_by(data_type, visit_study_disease_name) %>%
+    summarize(N = n())
+ggplot(dat, aes(x = visit_study_disease_name, y = N, fill = visit_study_disease_name)) + geom_bar(stat = "identity") +
+    geom_text(aes(label=N), vjust=0, size=3.5)+
+    ggtitle("Number of sample by omics") + facet_wrap(~data_type) + theme_bw()
+```
+
+```{r, fig.align="center", fig.height=8, fig.width=10}
+dat <- metadata %>% group_by(subject_id, data_type, visit_study_disease_name) %>%
+    summarize(N = n()) %>% ungroup() %>%
+    group_by(data_type, visit_study_disease_name) %>% summarise(N = max(N))
+
+ggplot(dat, aes(x = visit_study_disease_name, y = N, fill = visit_study_disease_name)) + geom_bar(stat = "identity") +
+    geom_text(aes(label=N), vjust=0, size=3.5)+
+    ggtitle("Max number of timepoints by omics") + facet_wrap(~data_type) + theme_bw()
+```
+
+
+```{r, fig.align="center"}
+ggplot(metadata, aes(x = data_type, y = visit_number, fill = data_type)) + geom_violin() + coord_flip() + ggtitle("Visit repartition by data types") + theme_bw()
+
+```
+
+```{r, fig.height=20, fig.width=10, fig.align="center"}
+ggplot(metadata, aes(x = subject_id, y = visit_number, color = data_type)) + geom_jitter() + facet_grid(visit_study_disease_name~.) + coord_flip()+ theme_bw() + theme(axis.text.y=element_blank(), axis.ticks.y=element_blank()) + ggtitle("Omic samples by Subject ID") + scale_color_brewer(palette="Dark2")
+
+metadata %>% filter(data_type %in% c("Metabolomics", "WGS_community")) %>% filter(visit_hbi_total > 5) %>%
+ ggplot( aes(x = subject_id, y = visit_number, color = data_type)) + geom_jitter() + facet_grid(visit_study_disease_name~.) + coord_flip()+ theme_bw() + theme(axis.text.y=element_blank(), axis.ticks.y=element_blank()) + ggtitle("Omic samples by Subject ID") + scale_color_brewer(palette="Dark2")   
+```
+
+```{r}
+short <- metadata %>% dplyr::select(subject_id, visit_number, data_type, visit_study_disease_name) %>% unique %>% rename(disease = visit_study_disease_name)
+
+# individual by disease
+short %>% dplyr::select(subject_id, disease) %>% unique %>% group_by(disease) %>%
+    summarise(N = n()) %>% knitr::kable()
+
+# individual by omic
+short %>% dplyr::select(subject_id, data_type) %>% unique %>% group_by(data_type) %>%
+    summarise(N = n()) %>% knitr::kable()
+
+N <- short %>% dplyr::select(subject_id, data_type) %>% unique %>% group_by(data_type) %>%
+    summarise(N = n())
+
+short <- metadata %>% dplyr::select(subject_id, visit_number, data_type, visit_study_disease_name, sample_body_site) %>% unique %>% rename(disease = visit_study_disease_name)
+
+max.time <- short %>% filter(sample_body_site == "feces") %>% dplyr::select(data_type, subject_id, visit_number) %>% unique %>% group_by(subject_id, data_type) %>%
+    summarise(N = n()) %>% ungroup() %>%
+    group_by(data_type) %>%
+    summarise( max.time = max(N))
+
+min.time <- short %>% filter(sample_body_site == "feces") %>% dplyr::select(data_type, subject_id, visit_number) %>% unique %>% group_by(subject_id, data_type) %>%
+    summarise(N = n()) %>% ungroup() %>%
+    group_by(data_type) %>%
+    summarise( min.time = min(N))
+    
+short %>% filter(sample_body_site == "feces") %>% dplyr::select(data_type, disease, subject_id) %>% unique %>% group_by(data_type, disease) %>%
+    summarise(N = n()) %>% spread(disease, N) %>% 
+    left_join(max.time) %>%
+    left_join(min.time) %>%
+    left_join(N)
+
+
+#short %>% group_by(subject_id, data_type, disease) %>% summarise(N_time = n()) %>% knitr::kable()
+
+#metadata %>% dplyr::select(sample_body_site, data_type, visit_study_disease_name) %>% group_by(sample_body_site, data_type, visit_study_disease_name) %>%
+#    summarise(N = n()) %>% pull(sample_body_site) %>% unique
+
+```
+
+```{r, fig.align="center"}
+dat <- metadata %>% filter(!is.na(visit_hbi_total)) %>%
+    dplyr::select(subject_id, visit_number, visit_hbi_total) %>% unique
+#dat <- dat %>% filter(subject_id == "1419f08f554e0c93f3b62fe90c076a99")
+ggplot(dat, aes(x = visit_number, y = visit_hbi_total, color = subject_id)) + geom_line() + theme_bw() + theme(legend.position = "none") +
+    ggtitle("HB index (Crohn) by time and by subject ") 
+    
+```
+
+```{r, fig.align="center"}
+dat <- metadata %>% filter(!is.na(visit_sccai_total)) %>%
+    dplyr::select(subject_id, visit_number, visit_sccai_total) %>% unique
+#dat <- dat %>% filter(subject_id == "1419f08f554e0c93f3b62fe90c076a99")
+ggplot(dat, aes(x = visit_number, y = visit_sccai_total, color = subject_id)) + geom_line() + theme_bw() + theme(legend.position = "none") +
+    ggtitle("SSCA index (U Colitis) by time and by subject ") 
+```
+
+
+# 16S file copy_number
+
+```bash
+cut -f 4 manifest_16S_community.tsv | sed "s/fasp:\/\/aspera2.ihmpdcc.org\///" | tail -n+2 | grep "copy_number" > 16S_file_good.txt
+mkdir 16S_copy_number
+cd 16S_copy_number
+for i in $(cat ../16S_file_good.txt); do ln -s $i; done
+```
+
+
+```{r, eval=F}
+# each file is a column
+# loop read files (same number of lines)
+files = list.files("./ibd/genome/microbiome/16s/analysis/hmqcp/") %>%
+    as.data.frame() %>% set_names("names") %>% mutate(names = as.character(names)) %>%
+    filter(str_detect(names, "copy_number.*tsv")) %>% pull(names)
+    
+data <- read_tsv(paste0("./ibd/genome/microbiome/16s/analysis/hmqcp/", files[1]))%>% dplyr::select("#OTU ID", "taxonomy", "CSM5FZ3N_P")
+for(path in files[-1]){
+    f <- read_tsv(paste0("./ibd/genome/microbiome/16s/analysis/hmqcp/", path))
+    data <- full_join(data, f)
+}
+```
+
+link file -> sample_id (metadata)
+
+```{r, eval=F}
+# read file link
+link_metadata <- read_tsv("./manifest_16S_community.tsv") %>% dplyr::select(sample_id, urls) %>%
+    mutate(urls = str_remove(urls, ".*/")) %>%
+    filter(str_detect(urls, "copy_number")) %>%
+    mutate(urls = str_remove(urls, "_normalize_by_copy_number.tsv"))
+
+metadata_16S_copy_number <- metadata %>% filter(sample_id %in% link_metadata$sample_id, data_type == "16S") %>% unique %>%
+    mutate(ID = factor(subject_id) %>% as.numeric() %>% paste0("_", visit_number)) %>%
+    left_join(link_metadata)
+
+metadata_16S_copy_number$visit_study_disease_name %>% table
+```
+ 
+```{r, eval=F}
+new_name <- colnames(data)[-c(1:2)] %>% as.data.frame() %>% set_names("name") %>%
+    left_join(metadata_16S_copy_number %>% dplyr::select(ID, urls), c("name" = "urls")) %>%
+    pull(ID)
+colnames(data) <- c("OTU_ID", "taxonomy", new_name)
+DATA_16S <- list("copy_number" = data)
+```
+
+## closed ref
+
+```{r, eval=F}
+files <- list.files("ibd/genome/microbiome/16s/analysis/hmqcp/") %>%
+    as.data.frame() %>% set_names("names") %>% mutate(names = as.character(names)) %>%
+    filter(str_detect(names, "closed_reference.*tsv")) %>% pull(names)
+
+data <- read_tsv(paste0("ibd/genome/microbiome/16s/analysis/hmqcp/", files[1]))
+
+for(path in files[-1]){
+    f <- read_tsv(paste0("ibd/genome/microbiome/16s/analysis/hmqcp/", path))
+    data <- full_join(data, f)
+}
+data <- data %>% dplyr::select(`# OTU`, taxonomy, everything()) %>% rename("OTU_ID" = "# OTU")
+
+new_name <- colnames(data)[-c(1:2)] %>% as.data.frame() %>% set_names("name") %>%
+    left_join(metadata_16S_copy_number %>% dplyr::select(ID, urls), c("name" = "urls")) %>%
+    pull(ID)
+
+colnames(data) <- c("OTU_ID", "taxonomy", new_name)
+DATA_16S$closed_ref <- data
+```
+
+## open ref
+
+```{r, eval=F}
+files <- list.files("ibd/genome/microbiome/16s/analysis/hmqcp/") %>%
+    as.data.frame() %>% set_names("names") %>% mutate(names = as.character(names)) %>%
+    filter(str_detect(names, "open_reference.*tsv")) %>% pull(names)
+
+data <- read_tsv(paste0("ibd/genome/microbiome/16s/analysis/hmqcp/", files[1]))
+
+for(path in files[-1]){
+    f <- read_tsv(paste0("ibd/genome/microbiome/16s/analysis/hmqcp/", path))
+    data <- full_join(data, f)
+}
+data <- data %>% dplyr::select(`# OTU`, taxonomy, everything())
+
+new_name <- colnames(data)[-c(1:2)] %>% as.data.frame() %>% set_names("name") %>%
+    left_join(metadata_16S_copy_number %>% dplyr::select(ID, urls), c("name" = "urls")) %>%
+    pull(ID)
+
+colnames(data) <- c("OTU_ID", "taxonomy", new_name)
+DATA_16S$open_ref <- data
+```
+
+ 
+```{r, eval=F}
+lapply(DATA_16S, dim)
+save(DATA_16S, metadata_16S_copy_number, file = "./16S_from_portal.RData")
+```
+
+# Proteomics
+
+## 1pep_1p_FDR_5ppm
+
+```{r, eval=F}
+
+PROTEIN <- list()
+manifest <- read_tsv("./hmp_cart_all_ibdmdb.tsv") 
+
+metadata_prot <- metadata %>% filter(data_type == "Proteomics") %>% filter(sample_body_site == "feces") %>% unique %>%
+    mutate(new_ID = paste0(sample_id, "_", visit_number))
+
+
+files <- list.files("ibd/proteome/microbiome/analysis/") %>%
+    as.data.frame() %>% set_names("names") %>% mutate(names = as.character(names)) %>%
+    filter(str_detect(names, "1pep_1p_FDR_5ppm.tsv")) %>% pull(names)
+
+data <- read_tsv(paste0("ibd/proteome/microbiome/analysis/", files[1]))
+
+for(path in files[-1]){
+    f <- read_tsv(paste0("ibd/proteome/microbiome/analysis/", path))
+    data <- full_join(data, f)
+}
+
+
+manifest_prot <- manifest %>% filter(str_detect(urls, "proteome")) %>% filter(str_detect(urls, "1pep_1p_FDR_5ppm")) %>%
+    mutate(ID = str_remove(urls, ".*/") %>% str_remove("_.*.tsv"))
+
+match_ID <- colnames(data)[-1] %>% as.data.frame() %>% set_names("name") %>% 
+    left_join(manifest_prot %>% dplyr::select(sample_id, ID), by = c("name"="ID")) %>%
+    left_join(metadata_prot %>% dplyr::select(sample_id, new_ID))
+
+colnames(data) <- c("Protein", match_ID$new_ID)
+PROTEIN[["1pep_1p_FDR_5ppm"]] <- data
+
+```
+
+## 1pep_5p_FDR_5ppm
+
+```{r, eval=F}
+VAR = "1pep_5p_FDR_5ppm"
+files <- list.files("ibd/proteome/microbiome/analysis/") %>%
+    as.data.frame() %>% set_names("names") %>% mutate(names = as.character(names)) %>%
+    filter(str_detect(names, VAR)) %>% pull(names)
+
+data <- read_tsv(paste0("ibd/proteome/microbiome/analysis/", files[1]))
+
+for(path in files[-1]){
+    f <- read_tsv(paste0("ibd/proteome/microbiome/analysis/", path))
+    data <- full_join(data, f)
+}
+
+
+manifest_prot <- manifest %>% filter(str_detect(urls, "proteome")) %>% filter(str_detect(urls, VAR)) %>%
+    mutate(ID = str_remove(urls, ".*/") %>% str_remove("_.*.tsv"))
+
+match_ID <- colnames(data)[-1] %>% as.data.frame() %>% set_names("name") %>% 
+    left_join(manifest_prot %>% dplyr::select(sample_id, ID), by = c("name"="ID")) %>%
+    left_join(metadata_prot %>% dplyr::select(sample_id, new_ID))
+
+colnames(data) <- c("Protein", match_ID$new_ID)
+PROTEIN[[VAR]] <- data
+```
+
+## 2pep_1p_FDR_5ppm
+
+```{r, eval=F}
+VAR = "2pep_1p_FDR_5ppm"
+files <- list.files("ibd/proteome/microbiome/analysis/") %>%
+    as.data.frame() %>% set_names("names") %>% mutate(names = as.character(names)) %>%
+    filter(str_detect(names, VAR)) %>% pull(names)
+
+data <- read_tsv(paste0("ibd/proteome/microbiome/analysis/", files[1]))
+
+for(path in files[-1]){
+    f <- read_tsv(paste0("ibd/proteome/microbiome/analysis/", path))
+    data <- full_join(data, f)
+}
+
+manifest_prot <- manifest %>% filter(str_detect(urls, "proteome")) %>% filter(str_detect(urls, VAR)) %>%
+    mutate(ID = str_remove(urls, ".*/") %>% str_remove("_.*.tsv"))
+
+match_ID <- colnames(data)[-1] %>% as.data.frame() %>% set_names("name") %>% 
+    left_join(manifest_prot %>% dplyr::select(sample_id, ID), by = c("name"="ID")) %>%
+    left_join(metadata_prot %>% dplyr::select(sample_id, new_ID))
+
+colnames(data) <- c("Protein", match_ID$new_ID)
+PROTEIN[[VAR]] <- data
+```
+
+## 2pep_5p_FDR_5ppm
+
+```{r, eval=F}
+VAR = "2pep_5p_FDR_5ppm"
+files <- list.files("ibd/proteome/microbiome/analysis/") %>%
+    as.data.frame() %>% set_names("names") %>% mutate(names = as.character(names)) %>%
+    filter(str_detect(names, VAR)) %>% pull(names)
+
+data <- read_tsv(paste0("ibd/proteome/microbiome/analysis/", files[1]))
+
+for(path in files[-1]){
+    f <- read_tsv(paste0("ibd/proteome/microbiome/analysis/", path))
+    data <- full_join(data, f)
+}
+
+manifest_prot <- manifest %>% filter(str_detect(urls, "proteome")) %>% filter(str_detect(urls, VAR)) %>%
+    mutate(ID = str_remove(urls, ".*/") %>% str_remove("_.*.tsv"))
+
+match_ID <- colnames(data)[-1] %>% as.data.frame() %>% set_names("name") %>% 
+    left_join(manifest_prot %>% dplyr::select(sample_id, ID), by = c("name"="ID")) %>%
+    left_join(metadata_prot %>% dplyr::select(sample_id, new_ID))
+
+colnames(data) <- c("Protein", match_ID$new_ID)
+PROTEIN[[VAR]] <- data
+```
+
+## kos
+
+```{r, eval=F}
+VAR = "kos"
+files <- list.files("ibd/proteome/microbiome/analysis/") %>%
+    as.data.frame() %>% set_names("names") %>% mutate(names = as.character(names)) %>%
+    filter(str_detect(names, VAR)) %>% pull(names)
+
+data <- read_tsv(paste0("ibd/proteome/microbiome/analysis/", files[1]))
+
+for(path in files[-1]){
+    f <- read_tsv(paste0("ibd/proteome/microbiome/analysis/", path))
+    data <- full_join(data, f)
+}
+
+manifest_prot <- manifest %>% filter(str_detect(urls, "proteome")) %>% filter(str_detect(urls, VAR)) %>%
+    mutate(ID = str_remove(urls, ".*/") %>% str_remove("_.*.tsv"))
+
+match_ID <- colnames(data)[-1] %>% as.data.frame() %>% set_names("name") %>% 
+    left_join(manifest_prot %>% dplyr::select(sample_id, ID), by = c("name"="ID")) %>%
+    left_join(metadata_prot %>% dplyr::select(sample_id, new_ID))
+
+colnames(data) <- c("KO", match_ID$new_ID)
+PROTEIN[[VAR]] <- data
+```
+
+```{r}
+save(PROTEIN, metadata_prot, file = "hmp_protein.RData")
+load("./hmp_protein.RData")
+
+imap(PROTEIN, ~write_tsv(.x, path = paste0("./", .y, ".tsv")))
+```
+
+
+# WGS community
+
+
+```{r}
+manifest <- read_tsv("./hmp_cart_all_ibdmdb.tsv") 
+
+metadata_wgs <- metadata %>% filter(data_type == "WGS_community") %>% filter(sample_body_site == "feces") %>% unique %>%
+    mutate(new_ID = paste0(sample_id, "_", visit_number))
+
+files <- list.files("ibd/genome/microbiome/wgs/analysis/hmscp/") %>%
+    as.data.frame() %>% set_names("names") %>% mutate(names = as.character(names)) %>%
+    filter(str_detect(names, "taxonomic_profile.tsv")) %>% pull(names)
+
+data <- read_tsv(paste0("ibd/genome/microbiome/wgs/analysis/hmscp/", files[1]))
+
+for(path in files[-1]){
+    f <- read_tsv(paste0("ibd/genome/microbiome/wgs/analysis/hmscp/", path))
+    if(names(f)[1] == "#SampleID"){  # taxonomy else #ID -> virus; no need
+        data <- full_join(data, f)
+    }
+}
+
+manifest_wgs <- manifest %>% filter(str_detect(urls, "/genome/microbiome/wgs/analysis/hmscp/")) %>% filter(str_detect(urls, "taxonomic_profile")) %>%
+    mutate(ID = str_remove(urls, ".*/") %>% str_remove(".tsv")) %>%
+    filter(ID %in% colnames(data))
+
+match_ID <- colnames(data)[-1] %>% as.data.frame() %>% set_names("name") %>% 
+    left_join(manifest_wgs %>% dplyr::select(sample_id, ID), by = c("name"="ID")) %>%
+    left_join(metadata_wgs %>% dplyr::select(sample_id, new_ID))
+
+colnames(data) <- c("OTU", match_ID$new_ID)
+write_tsv(data, path = "./WGS_community.tsv")
+```
+
+# metabolite
+
+## C8 pos
+```{r}
+metadata_metabo <- metadata %>% filter(data_type == "Metabolomics") %>% filter(sample_body_site == "feces") %>% unique %>%
+    mutate(new_ID = paste0(sample_id, "_", visit_number))
+
+
+VAR = "C8_pos"
+manifest_metabo <- manifest %>% filter(str_detect(urls, "metabolome")) %>% filter(str_detect(urls, VAR)) %>%
+    mutate(ID = str_remove(urls, ".*/") %>% str_remove("_C8_pos.tsv")) 
+
+
+files <- list.files("ibd/metabolome/microbiome/analysis/") %>%
+    as.data.frame() %>% set_names("names") %>% mutate(names = as.character(names)) %>%
+    filter(str_detect(names, VAR)) %>% pull(names)
+
+data <- read_tsv(paste0("ibd/metabolome/microbiome/analysis/", files[1])) %>%
+    dplyr::select(Method, Metabolite, Compound, str_remove(files[1], "_.*"))
+
+for(path in files[-1]){
+    f <- read_tsv(paste0("ibd/metabolome/microbiome/analysis/", path)) %>%
+    dplyr::select(Method, Metabolite, Compound, str_remove(path, "_.*"))
+    data <- full_join(data, f)
+}
+
+match_ID <- colnames(data)[-c(1,2,3)] %>% as.data.frame() %>% set_names("name") %>%
+    left_join(manifest_metabo  %>% dplyr::select(sample_id, ID), by = c("name"="ID")) %>%
+    left_join(metadata_metabo %>% dplyr::select(sample_id, new_ID))
+
+#colnames(data)  
+colnames(data) <- c("Method","Metabolite","Compound", match_ID$new_ID)
+
+write_tsv(data, paste0("./merged_Metabolomics/",VAR,".tsv"))
+```
+
+## C18 neg
+```{r}
+metadata_metabo <- metadata %>% filter(data_type == "Metabolomics") %>% filter(sample_body_site == "feces") %>% unique %>%
+    mutate(new_ID = paste0(sample_id, "_", visit_number))
+
+
+VAR = "C18_neg"
+manifest_metabo <- manifest %>% filter(str_detect(urls, "metabolome")) %>% filter(str_detect(urls, VAR)) %>%
+    mutate(ID = str_remove(urls, ".*/") %>% str_remove("_C18_neg.tsv")) 
+
+files <- list.files("ibd/metabolome/microbiome/analysis/") %>%
+    as.data.frame() %>% set_names("names") %>% mutate(names = as.character(names)) %>%
+    filter(str_detect(names, VAR)) %>% pull(names)
+
+data <- read_tsv(paste0("ibd/metabolome/microbiome/analysis/", files[1])) %>%
+    dplyr::select(Method, Metabolite, Compound, str_remove(files[1], "_.*"))
+
+for(path in files[-1]){
+    f <- read_tsv(paste0("ibd/metabolome/microbiome/analysis/", path)) %>%
+    dplyr::select(Method, Metabolite, Compound, str_remove(path, "_.*"))
+    data <- full_join(data, f)
+}
+
+match_ID <- colnames(data)[-c(1,2,3)] %>% as.data.frame() %>% set_names("name") %>%
+    left_join(manifest_metabo  %>% dplyr::select(sample_id, ID), by = c("name"="ID")) %>%
+    left_join(metadata_metabo %>% dplyr::select(sample_id, new_ID))
+
+#colnames(data)  
+colnames(data) <- c("Method","Metabolite","Compound", match_ID$new_ID)
+
+write_tsv(data, paste0("./merged_Metabolomics/",VAR,".tsv"))
+```
+
+
+
+## HILIC neg
+```{r}
+metadata_metabo <- metadata %>% filter(data_type == "Metabolomics") %>% filter(sample_body_site == "feces") %>% unique %>%
+    mutate(new_ID = paste0(sample_id, "_", visit_number))
+
+
+VAR = "HILIC_neg"
+manifest_metabo <- manifest %>% filter(str_detect(urls, "metabolome")) %>% filter(str_detect(urls, VAR)) %>%
+    mutate(ID = str_remove(urls, ".*/") %>% str_remove("_HILIC_neg.tsv")) 
+
+files <- list.files("ibd/metabolome/microbiome/analysis/") %>%
+    as.data.frame() %>% set_names("names") %>% mutate(names = as.character(names)) %>%
+    filter(str_detect(names, VAR)) %>% pull(names)
+
+data <- read_tsv(paste0("ibd/metabolome/microbiome/analysis/", files[1])) %>%
+    dplyr::select(Method, Metabolite, Compound, str_remove(files[1], "_.*"))
+
+for(path in files[-1]){
+    f <- read_tsv(paste0("ibd/metabolome/microbiome/analysis/", path)) %>%
+    dplyr::select(Method, Metabolite, Compound, str_remove(path, "_.*"))
+    data <- full_join(data, f)
+}
+
+match_ID <- colnames(data)[-c(1,2,3)] %>% as.data.frame() %>% set_names("name") %>%
+    left_join(manifest_metabo  %>% dplyr::select(sample_id, ID), by = c("name"="ID")) %>%
+    left_join(metadata_metabo %>% dplyr::select(sample_id, new_ID))
+
+#colnames(data)  
+colnames(data) <- c("Method","Metabolite","Compound", match_ID$new_ID)
+
+write_tsv(data, paste0("./merged_Metabolomics/",VAR,".tsv"))
+```
+
+## HILIC pos
+```{r}
+metadata_metabo <- metadata %>% filter(data_type == "Metabolomics") %>% filter(sample_body_site == "feces") %>% unique %>%
+    mutate(new_ID = paste0(sample_id, "_", visit_number))
+
+
+VAR = "HILIC_pos"
+manifest_metabo <- manifest %>% filter(str_detect(urls, "metabolome")) %>% filter(str_detect(urls, VAR)) %>%
+    mutate(ID = str_remove(urls, ".*/") %>% str_remove("_HILIC_pos.tsv")) 
+
+files <- list.files("ibd/metabolome/microbiome/analysis/") %>%
+    as.data.frame() %>% set_names("names") %>% mutate(names = as.character(names)) %>%
+    filter(str_detect(names, VAR)) %>% pull(names)
+
+data <- read_tsv(paste0("ibd/metabolome/microbiome/analysis/", files[1])) %>%
+    dplyr::select(Method, Metabolite, Compound, str_remove(files[1], "_.*"))
+
+for(path in files[-1]){
+    f <- read_tsv(paste0("ibd/metabolome/microbiome/analysis/", path)) %>%
+    dplyr::select(Method, Metabolite, Compound, str_remove(path, "_.*"))
+    data <- full_join(data, f)
+}
+
+match_ID <- colnames(data)[-c(1,2,3)] %>% as.data.frame() %>% set_names("name") %>%
+    left_join(manifest_metabo  %>% dplyr::select(sample_id, ID), by = c("name"="ID")) %>%
+    left_join(metadata_metabo %>% dplyr::select(sample_id, new_ID))
+
+#colnames(data)  
+colnames(data) <- c("Method","Metabolite","Compound", match_ID$new_ID)
+
+write_tsv(data, paste0("./merged_Metabolomics/",VAR,".tsv"))
+```
+
+# WGS
+
+## Pathcoverage
+```{r}
+manifest <- read_tsv("./hmp_cart_all_ibdmdb.tsv") 
+metadata_WGS <- metadata %>% filter(data_type == "WGS_functional") %>% filter(sample_body_site == "feces") %>% unique %>%
+    mutate(new_ID = paste0(sample_id, "_", visit_number))
+
+
+VAR = "pathcoverage"
+manifest_WGS <- manifest %>% filter(str_detect(urls, "wgs/analysis/hmmrc")) %>% filter(str_detect(urls, VAR)) %>%
+    mutate(ID = str_remove(urls, ".*/") %>% str_remove("_pathcoverage.tsv"))
+
+files <- list.files("ibd/genome/microbiome/wgs/analysis/hmmrc") %>%
+    as.data.frame() %>% set_names("names") %>% mutate(names = as.character(names)) %>%
+    filter(str_detect(names, VAR)) %>% pull(names)
+
+data <- read_tsv(paste0("ibd/genome/microbiome/wgs/analysis/hmmrc/", files[1]))
+
+for(path in files[-1]){
+    f <- read_tsv(paste0("ibd/genome/microbiome/wgs/analysis/hmmrc/", path))
+    data <- full_join(data, f)
+}
+
+match_ID <- colnames(data)[-c(1,2,3)] %>% as.data.frame() %>% set_names("name") %>%
+    mutate(name = str_remove(name, "_Coverage")) %>%
+    left_join(manifest_WGS  %>% dplyr::select(sample_id, ID), by = c("name"="ID")) %>%
+    left_join(metadata_WGS %>% dplyr::select(sample_id, new_ID))
+
+#colnames(data)  
+colnames(data) <- c("Pathways", match_ID$new_ID)
+
+write_tsv(data, paste0("./Merged_WGS/",VAR, ".tsv"))
+```
+
+# pathabundance
+
+```{r}
+metadata_WGS <- metadata %>% filter(data_type == "WGS_functional") %>% filter(sample_body_site == "feces") %>% unique %>%
+    mutate(new_ID = paste0(sample_id, "_", visit_number))
+
+VAR = "pathabundance.tsv"
+manifest_WGS <- manifest %>% filter(str_detect(urls, "wgs/analysis/hmmrc")) %>% filter(str_detect(urls, VAR)) %>%
+    mutate(ID = str_remove(urls, ".*/") %>% str_remove(paste0("_",VAR)))
+
+files <- list.files("ibd/genome/microbiome/wgs/analysis/hmmrc") %>%
+    as.data.frame() %>% set_names("names") %>% mutate(names = as.character(names)) %>%
+    filter(str_detect(names, VAR)) %>% pull(names)
+
+data <- read_tsv(paste0("ibd/genome/microbiome/wgs/analysis/hmmrc/", files[1]))
+
+for(path in files[-1]){
+    f <- read_tsv(paste0("ibd/genome/microbiome/wgs/analysis/hmmrc/", path))
+    data <- full_join(data, f)
+}
+
+match_ID <- colnames(data)[-1] %>% as.data.frame() %>% set_names("name") %>%
+    mutate(name = str_remove(name, "_Abundance")) %>%
+    left_join(manifest_WGS  %>% dplyr::select(sample_id, ID), by = c("name"="ID")) %>%
+    left_join(metadata_WGS %>% dplyr::select(sample_id, new_ID))
+
+#colnames(data)  
+colnames(data) <- c("Pathways", match_ID$new_ID)
+
+write_tsv(data, paste0("./Merged_WGS/",VAR))
+```
+
+
+## ecs
+
+```{r}
+metadata_WGS <- metadata %>% filter(data_type == "WGS_functional") %>% filter(sample_body_site == "feces") %>% unique %>%
+    mutate(new_ID = paste0(sample_id, "_", visit_number))
+
+VAR = "ecs.tsv"
+manifest_WGS <- manifest %>% filter(str_detect(urls, "wgs/analysis/hmmrc")) %>% filter(str_detect(urls, VAR)) %>%
+    mutate(ID = str_remove(urls, ".*/") %>% str_remove(paste0("_",VAR)))
+
+files <- list.files("ibd/genome/microbiome/wgs/analysis/hmmrc") %>%
+    as.data.frame() %>% set_names("names") %>% mutate(names = as.character(names)) %>%
+    filter(str_detect(names, VAR)) %>% pull(names)
+
+data <- read_tsv(paste0("ibd/genome/microbiome/wgs/analysis/hmmrc/", files[1]))
+
+for(path in files[-1]){
+    f <- read_tsv(paste0("ibd/genome/microbiome/wgs/analysis/hmmrc/", path))
+    data <- full_join(data, f)
+}
+
+match_ID <- colnames(data)[-1] %>% as.data.frame() %>% set_names("name") %>%
+    left_join(manifest_WGS  %>% dplyr::select(sample_id, ID), by = c("name"="ID")) %>%
+    left_join(metadata_WGS %>% dplyr::select(sample_id, new_ID))
+
+#colnames(data)  
+colnames(data) <- c("Gene", match_ID$new_ID)
+
+write_tsv(data, paste0("./Merged_WGS/",VAR))
+```
+
+## gene family
+
+```{r}
+metadata_WGS <- metadata %>% filter(data_type == "WGS_functional") %>% filter(sample_body_site == "feces") %>% unique %>%
+    mutate(new_ID = paste0(sample_id, "_", visit_number))
+
+VAR = "genefamilies.tsv"
+manifest_WGS <- manifest %>% filter(str_detect(urls, "wgs/analysis/hmmrc")) %>% filter(str_detect(urls, VAR)) %>%
+    mutate(ID = str_remove(urls, ".*/") %>% str_remove(paste0("_",VAR)))
+
+data <- read_tsv("./Merged_WGS/all.genefamiles.tsv")
+
+match_ID <- colnames(data)[-1] %>% as.data.frame() %>% set_names("name") %>%
+    mutate(name = str_remove(name, "_Abundance-RPKs")) %>%
+    left_join(manifest_WGS  %>% dplyr::select(sample_id, ID), by = c("name"="ID")) %>%
+    left_join(metadata_WGS %>% dplyr::select(sample_id, new_ID))
+
+#colnames(data)  
+colnames(data) <- c("Gene_family", match_ID$new_ID)
+
+write_tsv(data, paste0("./Merged_WGS/",VAR))
+```
+

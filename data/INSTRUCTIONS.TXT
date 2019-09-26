@@ -1,0 +1,20 @@
+
+Go to: https://portal.hmpdacc.org/search/s?facetTab=cases
+
+In "Samples", select studies: IDBMDB.
+In "Files", select Format = tbl, Type = abundance_matrix, matrix type = 16S_community
+these give the following "advanced" request:
+
+cases.study_name in ["IBDMDB"] and files.file_matrix_type in ["16s_community"] and files.file_type in ["abundance_matrix"] and files.file_format in ["tbl"]
+
+Then "Add all files to the Cart" and go to your cart
+Download > Manifest: give you the list of files, urls and sample_id
+Download > File Metadata: link to disease, visit_number, sample_id, subject_id, ...
+
+I have never been able to use the download app provided by HMP, so here are the commands to download with "ascp" (needs to be installed first)
+https://www.hmpdacc.org/hmp/resources/download.php
+
+for i in $(cat hmp_folders.txt); do mkdir ./$i; ascp -QT abodein@aspera.hmpdacc.org:$i .$i; done
+just change "abodein" by your user account, password is requested
+
+Then see my example with 16S data in explore.Rmd
