@@ -17,6 +17,8 @@ if (!requireNamespace('data.table'))
 library(MultiAssayExperiment)
 library(data.table)
 library(magrittr)
+library(dplyr)
+library(stringr)
 ```
 
 Helper functions:
@@ -64,6 +66,7 @@ metab_files <- list.files(path = '../data/merged_Metabolomics/', full.names = TR
 wgs_files <- list.files(path = '../data/Merged_WGS/', full.names = TRUE)
 metadata_file <- '../data/metadata.tsv'
 prot_files <- list.files('../data/Proteomics/', full.names = TRUE)
+manifest_file <- "../data/hmp_cart_all_ibdmdb.tsv"
 ```
 
 Read files:
@@ -73,6 +76,7 @@ Read files:
 ```{r}
 metadata <- data.frame(fread(metadata_file))
 metadata$new_ID <- paste0(metadata$sample_id, "_", metadata$visit_number)
+manifest <- data.frame(fread(manifest_file))
 ```
 
 ```{r}
@@ -81,6 +85,21 @@ metadata$new_ID <- paste0(metadata$sample_id, "_", metadata$visit_number)
 sum(duplicated(metadata))
 ```
 
+* from Antoine: the same sample can be observed in different omics files.
+In the meantime, the same omics is described in different files (i.e. pathabundance, pathcoverage, ... for WMS).
+
+```{r}
+manifest %>% filter(sample_id == "d39c1941c8f6e8b0f6ead5d7f705b0de") %>%
+  filter(urls %>% str_detect("wgs/analysis/hmmrc/"))
+
+metadata %>% filter(sample_id == "d39c1941c8f6e8b0f6ead5d7f705b0de") %>% filter(data_type == "WGS_functional")
+```
+
+* metaolomics data do have metadata
+
+```{r}
+metadata %>% filter(data_type == "Metabolomics") %>% head
+```
 
 ## Metabolomic
 
@@ -96,6 +115,8 @@ lapply(metab_list, function(x) grep(pattern = "^X", colnames(x)))
 metab_list <- lapply(metab_list, function(x) set_colnames(x, gsub(pattern = "^X",replacement = "", colnames(x))))
 ```
 
+Note : Why don't use `as.data.frame` instead of `data.frame` in the `fread_tsv` function or `data.frame(check.names = FALSE, ...)` to get rid of `X...`?
+
 Check all samples have metadata:
 
 ```{r}
@@ -107,6 +128,8 @@ lapply(metab_list, function(x) sum(! colnames(x) %in% metadata$new_ID))
 lapply(metab_list, function(x) sum(! gsub(pattern = "_.*$", "", x = colnames(x)) %in% metadata$sample_id))
 ## so all samples are valid, only their visit record is not there
 ```
+
+from Antoine: yes, new_ID is subjectID_VisitNumber
 
 ```{r}
 View(metab_list[[1]][1:10,1:10])
@@ -132,6 +155,29 @@ names(metab_list) %<>% paste0("metab_", .)
 
 
 ## WGS
+
+```{r}
+#example of mismatch, no ECS here
+manifest %>% filter(str_detect(urls, "CSM7KOMV.*tsv"))
+```
+
+```{r, eval =F}
+# former colnames; files in Cloud folder
+WGS_former_files <- c("~/ls3x/Nextcloud/files/IBDMDB/ibd/genome/microbiome/wgs/analysis/hmmrc/new_files/ALL_pathabundance.tsv", "~/ls3x/Nextcloud/files/IBDMDB/ibd/genome/microbiome/wgs/analysis/hmmrc/new_files/ALL_pathcoverage.tsv",
+"~/ls3x/Nextcloud/files/IBDMDB/ibd/genome/microbiome/wgs/analysis/hmmrc/new_files/ALL_genefamilies.tsv",
+"~/ls3x/Nextcloud/files/IBDMDB/ibd/genome/microbiome/wgs/analysis/hmmrc/new_files/ALL_ecs.tsv", 
+"~/ls3x/Nextcloud/files/IBDMDB/ibd/genome/microbiome/wgs/analysis/hmscp/new_files/ALL_taxonomicprofile.tsv")
+WGS_former_data <- lapply(WGS_former_files, readr::read_tsv)
+names(WGS_former_data) <- WGS_former_files %>% str_remove(".*_") %>% str_remove(".tsv")
+
+save(WGS_former_data, file = "../data/wgs.RData")
+```
+
+```{r}
+load("../data/wgs.RData")
+```
+
+
 
 Same with WGS data:
 
@@ -208,6 +254,8 @@ scom_list(wgs_list, metab_list)
 
 [#Antoine] we noticed that there were `NA`s in original files that lead to weird namings by `fread`. Also you can see the `ecs` data does not share a lot of samples with others. Can you please let me know if I have to i) drop `ecs` dataset and ii) drop some non-matching samples from other datasets?
 
+From Antoine, I would probably drop `ecs` data
+
 I'm assuming these are separate data so I don't worry about common features.
 
 ```{r}
@@ -241,6 +289,8 @@ fcom_list(prot_list)
 ```
 
 [#Antoine] So I'm going with the one from `pep` ones. Also keeping the `kos` one as separate dataset, right?
+
+from Antoine: As wgs `ecs`, I would drop `kos`.
 
 ```{r}
 ## keeping 2pep_5p_FDR_5ppm and kos datasets
