@@ -113,7 +113,7 @@ save(former_metabo, file = "../data/metabo_former.RData")
 ```
 
 ```{r}
-#download.file(url = "", destfile = "../data/wgs.RData", method = "wget")
+download.file(url = "http://adcloud.genome.ulaval.ca/index.php/s/Xd6CY9pLNc2SRQC/download", destfile = "../data/wgs.RData", method = "wget")
 load("../data/metabo_former.RData")
 ```
 
@@ -165,6 +165,7 @@ Check all samples have metadata:
 ##TODO There are no metadata available for these samples
 ## number of samples in each dataset not present in metadata$new_ID
 lapply(metab_list, function(x) sum(! colnames(x) %in% metadata$new_ID))
+lapply(former_metabo, function(x) sum(! colnames(x) %in% metadata$new_ID))
 
 ## number of trimmed sample names (no visit) in each dataset not present in metadata$sample_id
 lapply(metab_list, function(x) sum(! gsub(pattern = "_.*$", "", x = colnames(x)) %in% metadata$sample_id))
@@ -407,7 +408,7 @@ change_prot_colnames <- function(x){
   return(x)
 }
 
-former_prot <- lapply(former_prot,change_wgs_colnames)
+former_prot <- lapply(former_prot,change_prot_colnames)
 ```
 
 ```{r}
@@ -422,6 +423,7 @@ names(prot_list) %<>% paste0("prot_", .)
 ##TODO There are no metadata available for these samples
 ## number of samples in each dataset not present in metadata$new_ID
 lapply(prot_list, function(x) sum(! colnames(x) %in% metadata$new_ID))
+lapply(former_prot, function(x) sum(! colnames(x) %in% metadata$new_ID))
 ```
 
 Create MAE object:
