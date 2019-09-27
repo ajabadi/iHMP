@@ -19,6 +19,7 @@ library(data.table)
 library(magrittr)
 library(dplyr)
 library(stringr)
+library(readr)
 ```
 
 Helper functions:
@@ -103,10 +104,51 @@ metadata %>% filter(data_type == "Metabolomics") %>% head
 
 ## Metabolomic
 
+former metabo
+```{r, eval=F}
+former_metab_files<- c("~/ls3x/Nextcloud/files/IBDMDB/ibd/metabolome/microbiome/analysis/new_metabo/all_C18_neg_compound.tsv","~/ls3x/Nextcloud/files/IBDMDB/ibd/metabolome/microbiome/analysis/new_metabo/all_C8_pos_compound.tsv", "~/ls3x/Nextcloud/files/IBDMDB/ibd/metabolome/microbiome/analysis/new_metabo/all_HILIC_neg_compound.tsv", "~/ls3x/Nextcloud/files/IBDMDB/ibd/metabolome/microbiome/analysis/new_metabo/all_HILIC_pos_compound.tsv")
+former_metabo <- lapply(former_metab_files, readr::read_tsv)
+names(former_metabo) <- str_remove(former_metab_files, ".*/all_") %>% str_remove("_compound.tsv")
+save(former_metabo, file = "../data/metabo_former.RData")
+```
+
+```{r}
+#download.file(url = "", destfile = "../data/wgs.RData", method = "wget")
+load("../data/metabo_former.RData")
+```
+
+* change colnames
+
+```{r}
+change_metabo_colnames <- function(x){
+  manifest_metabo <- manifest %>% filter(str_detect(urls, "metabolome")) %>% 
+    mutate(ID = str_remove(urls, ".*/") %>% str_remove("_.*")) %>%
+    dplyr::select(ID, sample_id) %>% unique
+  
+  # new_ID is now samppleid_visit_number
+  metadata_metabo <- metadata %>% filter(data_type == "Metabolomics") %>%
+    dplyr::select(sample_id, new_ID) %>% unique
+  
+  new_colnames <- colnames(x)[-1] %>% as.data.frame %>%  purrr::set_names("name") %>%
+    left_join(manifest_metabo, by = c("name"="ID")) %>% # add sample_id
+    left_join(metadata_metabo, by = c("sample_id" = "sample_id")) # add new_ID
+  
+  colnames(x) <- c("Compound", new_colnames$new_ID)
+  x <- x %>% column_to_rownames("Compound")
+  return(x)
+}
+
+former_metabo <- lapply(former_metabo,change_metabo_colnames)
+```
+
+
+
+
 ```{r}
 ## read files as named list
 metab_list <- fread_tsv(metab_files)
 ```
+
 
 ```{r}
 ## unintended X added to colnames with subject_id that start with numbers
@@ -129,12 +171,9 @@ lapply(metab_list, function(x) sum(! gsub(pattern = "_.*$", "", x = colnames(x))
 ## so all samples are valid, only their visit record is not there
 ```
 
-from Antoine: yes, new_ID is subjectID_VisitNumber
-
 ```{r}
 View(metab_list[[1]][1:10,1:10])
 ```
-
 
 ```{r}
 ## check that new ID is same as subjectid_visitnumber
@@ -144,20 +183,23 @@ sum(metadata$new_ID != paste0(metadata$subject_id, "_", metadata$visit_number))
 ```{r}
 ## common samples
 scom_list(metab_list)
+scom_list(former_metabo) # ok
 ## common features
 fcom_list(metab_list)
+fcom_list(former_metabo) # ok
 ```
 
 ```{r}
 ## adding 'metab_' to names to distinguish in MAE object
 names(metab_list) %<>% paste0("metab_", .)
+names(former_metabo) %<>% paste0("metab_", .)
 ```
 
 
 ## WGS
 
 ```{r}
-#example of mismatch, no ECS here
+#example of mismatch, with no ECS here
 manifest %>% filter(str_detect(urls, "CSM7KOMV.*tsv"))
 ```
 
@@ -178,6 +220,29 @@ download.file(url = "http://adcloud.genome.ulaval.ca/index.php/s/6pj7r6nG2qnyLXw
 load("../data/wgs.RData")
 ```
 
+* change column
+
+```{r}
+change_wgs_colnames <- function(x){
+  manifest_wgs <- manifest %>% filter(str_detect(urls, "/wgs/")) %>% 
+    mutate(ID = str_remove(urls, ".*/") %>% str_extract(".*_") %>% str_remove("_$")) %>%
+    dplyr::select(ID, sample_id) %>% unique
+  
+  # new_ID is now samppleid_visit_number
+  metadata_wgs <- metadata %>% filter(str_detect(data_type, "WGS")) %>%
+    dplyr::select(sample_id, new_ID) %>% unique
+  
+  new_colnames <- colnames(x)[-1] %>% str_extract("^[:alnum:]*(_[:alnum:]*)?") %>% as.data.frame %>%  purrr::set_names("name") %>%
+    left_join(manifest_wgs, by = c("name"="ID")) %>% # add sample_id
+    left_join(metadata_wgs, by = c("sample_id" = "sample_id")) # add new_ID
+  
+  colnames(x) <- c("XX1", new_colnames$new_ID)
+  x <- x %>% column_to_rownames("XX1")
+  return(x)
+}
+
+former_wgs <- lapply(WGS_former_data,change_wgs_colnames)
+```
 
 
 Same with WGS data:
@@ -201,16 +266,20 @@ View(wgs_list[[3]][1:10,1:10])
 ```{r}
 ## common samples
 scom_list(wgs_list)
-## common features
+scom_list(former_wgs)
+# common features
 fcom_list(wgs_list)
+fcom_list(former_wgs)
 ```
 
 What are the non-matching ones?
 
 ```{r}
 wgs_mismatch <- name_mismatch(wgs_list)
+wgs_mismatch_former <- name_mismatch(former_wgs)
 ```
 
+from Antoine: I think we should drop ecs and the sample `1419f08f554e0c93f3b62fe90c246a08_13`
 ```{r}
 ## one-by-one mismatches can be inspected as follows:
 ## for pathcoverage and pathabundance
@@ -251,11 +320,20 @@ Shared samples with metabolites:
 ```{r}
 ## common samples b/w WGS (~300) and metabolomics (545)
 scom_list(wgs_list, metab_list)
+scom_list(former_wgs, former_metabo)
 ```
 
 [#Antoine] we noticed that there were `NA`s in original files that lead to weird namings by `fread`. Also you can see the `ecs` data does not share a lot of samples with others. Can you please let me know if I have to i) drop `ecs` dataset and ii) drop some non-matching samples from other datasets?
 
-From Antoine, I would probably drop `ecs` data
+From Antoine, I would probably drop `ecs`
+
+```{r}
+lapply(former_wgs, function(x) sum(is.na(colnames(x))))
+# NA in genefamilies was "CSM67UEW_TR" wich is missing from menifest file
+manifest %>% filter(str_detect(urls, "CSM67UEW_TR"))
+```
+
+from Antoine, we should probably remove this missing sample.
 
 I'm assuming these are separate data so I don't worry about common features.
 
@@ -267,8 +345,9 @@ names(wgs_list) %<>% paste0("WGS_", .)
 ## last one does already have WGS prefix
 names(wgs_list)[5] <- gsub(".tsv", "", basename(wgs_files)[5])
 names(wgs_list)
-```
 
+names(former_wgs) %<>% paste0("WGS_", .)
+```
 
 ## Proteomic
 
@@ -292,6 +371,44 @@ fcom_list(prot_list)
 [#Antoine] So I'm going with the one from `pep` ones. Also keeping the `kos` one as separate dataset, right?
 
 from Antoine: As wgs `ecs`, I would drop `kos`.
+
+
+```{r, eval = F}
+former_prot_files <- list("~/ls3x/Nextcloud/files/IBDMDB/ibd/proteome/microbiome/analysis/new_files/ALL_1pep.1p.tsv","~/ls3x/Nextcloud/files/IBDMDB/ibd/proteome/microbiome/analysis/new_files/ALL_1pep.5p.tsv","~/ls3x/Nextcloud/files/IBDMDB/ibd/proteome/microbiome/analysis/new_files/ALL_2pep.1p.tsv", "~/ls3x/Nextcloud/files/IBDMDB/ibd/proteome/microbiome/analysis/new_files/ALL_2pep.5p.tsv")
+former_prot <- lapply(former_prot_files, readr::read_tsv)
+
+names(former_prot) <- former_prot_files %>% str_remove(".*_") %>% str_remove(".tsv")
+save(former_prot, file = "../data/prot.RData")
+```
+
+```{r}
+download.file(url = "http://adcloud.genome.ulaval.ca/index.php/s/GgFwJrRNMtBqRp2/download", destfile = "../data/prot.RData", method = "wget")
+load("../data/prot.RData")
+```
+
+* change prot colnames
+
+```{r}
+change_prot_colnames <- function(x){
+  manifest_prot <- manifest %>% filter(str_detect(urls, "proteome")) %>% 
+    mutate(ID = str_remove(urls, ".*/") %>% str_remove("_.*")) %>%
+    dplyr::select(ID, sample_id) %>% unique
+  
+  # new_ID is now samppleid_visit_number
+  metadata_prot <- metadata %>% filter(str_detect(data_type, "Proteomics")) %>%
+    dplyr::select(sample_id, new_ID) %>% unique
+  
+  new_colnames <- colnames(x)[-1] %>% as.data.frame %>%  purrr::set_names("name") %>%
+    left_join(manifest_prot, by = c("name"="ID")) %>% # add sample_id
+    left_join(metadata_prot, by = c("sample_id" = "sample_id")) # add new_ID
+  
+  colnames(x) <- c("XX1", new_colnames$new_ID)
+  x <- x %>% column_to_rownames("XX1")
+  return(x)
+}
+
+former_prot <- lapply(former_prot,change_wgs_colnames)
+```
 
 ```{r}
 ## keeping 2pep_5p_FDR_5ppm and kos datasets
