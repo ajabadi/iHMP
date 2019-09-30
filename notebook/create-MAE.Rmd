@@ -426,6 +426,52 @@ lapply(prot_list, function(x) sum(! colnames(x) %in% metadata$new_ID))
 lapply(former_prot, function(x) sum(! colnames(x) %in% metadata$new_ID))
 ```
 
+```{r}
+breackdown.data <- function(x,omics_type){
+  colnames(x) %>% as.data.frame() %>% purrr::set_names("sample_time") %>%
+    left_join(metadata, by = c("sample_time"="new_ID")) %>%
+    dplyr::select(sample_id, visit_study_disease_name) %>% unique %>%
+    mutate(omic = omics_type) %>%
+    na.omit()
+}
+  
+breakdown.wgs <- do.call("rbind", lapply(seq_along(former_wgs), function(x) breackdown.data(former_wgs[[x]], "WGS") %>% mutate(omic = paste0("WGS_",names(former_wgs)[x]))))
+
+breakdown.metabo <- do.call("rbind", lapply(seq_along(former_metabo), function(x) breackdown.data(former_metabo[[x]], "Metabolomics"))) %>% unique
+
+breakdown.prot <- do.call("rbind", lapply(seq_along(former_prot), function(x) breackdown.data(former_prot[[x]], "Proteomics"))) %>% unique
+
+all.breakdown <- rbind(breakdown.wgs, breakdown.metabo, breakdown.prot) 
+bk.list <- split(all.breakdown, f = all.breakdown$omic) %>% lapply(function(x) x %>% pull(sample_id) %>% unique)
+
+scom2 <- function(x,y) sum(x %in% y)
+scom_list2 <- function(data_list1, data_list2 = data_list1) sapply(data_list1, function(x) sapply(data_list2, function(y) scom2(x,y)))
+
+scom_list2(bk.list)
+UpSetR::upset(fromList(bk.list), order.by = "freq", sets = c("Metabolomics", "Proteomics", "WGS_taxonomicprofile", "WGS_genefamilies", "WGS_pathabundance", "WGS_pathcoverage", "WGS_ecs"))
+```
+
+```{r}
+# individual level
+breackdown.data.individual <- function(x,omics_type){
+  colnames(x) %>% as.data.frame() %>% purrr::set_names("sample_time") %>%
+    left_join(metadata, by = c("sample_time"="new_ID")) %>%
+    dplyr::select(subject_id, visit_study_disease_name) %>% unique %>%
+    mutate(omic = omics_type) %>%
+    na.omit()
+}
+breakdown.ind.wgs <- do.call("rbind", lapply(seq_along(former_wgs), function(x) breackdown.data.individual(former_wgs[[x]], "WGS") %>% mutate(omic = paste0("WGS_",names(former_wgs)[x]))))
+
+breakdown.ind.metabo <- do.call("rbind", lapply(seq_along(former_metabo), function(x) breackdown.data.individual(former_metabo[[x]], "Metabolomics"))) %>% unique
+
+breakdown.ind.prot <- do.call("rbind", lapply(seq_along(former_prot), function(x) breackdown.data.individual(former_prot[[x]], "Proteomics"))) %>% unique
+
+all.breakdown.ind <- rbind(breakdown.ind.wgs, breakdown.ind.metabo, breakdown.ind.prot)
+bk.ind.list <- split(all.breakdown.ind, f = all.breakdown.ind$omic) %>% lapply(function(x) x %>% pull(subject_id) %>% unique)
+scom_list2(bk.ind.list) %>% View
+```
+
+
 Create MAE object:
 
 ```{r}
@@ -434,5 +480,4 @@ iHMP <- MultiAssayExperiment(experiments = ExperimentList(c(prot_list, wgs_list,
                      # as sample names
                      )
 ```
-
 
