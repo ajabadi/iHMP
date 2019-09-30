@@ -114,7 +114,7 @@ save(former_metabo, file = "../data/metabo_former.RData")
 ```
 
 ```{r}
-download.file(url = "http://adcloud.genome.ulaval.ca/index.php/s/Xd6CY9pLNc2SRQC/download", destfile = "../data/wgs.RData", method = "wget")
+download.file(url = "http://adcloud.genome.ulaval.ca/index.php/s/Xd6CY9pLNc2SRQC/download", destfile = "../data/metabo_former.RData", method = "auto")
 load("../data/metabo_former.RData")
 ```
 
@@ -208,7 +208,7 @@ save(WGS_former_data, file = "../data/wgs.RData")
 ```
 
 ```{r}
-download.file(url = "http://adcloud.genome.ulaval.ca/index.php/s/6pj7r6nG2qnyLXw/download", destfile = "../data/wgs.RData", method = "wget")
+download.file(url = "http://adcloud.genome.ulaval.ca/index.php/s/6pj7r6nG2qnyLXw/download", destfile = "../data/wgs.RData", method = "auto")
 load("../data/wgs.RData")
 ```
 
@@ -374,7 +374,7 @@ save(former_prot, file = "../data/prot.RData")
 ```
 
 ```{r}
-download.file(url = "http://adcloud.genome.ulaval.ca/index.php/s/GgFwJrRNMtBqRp2/download", destfile = "../data/prot.RData", method = "wget")
+download.file(url = "http://adcloud.genome.ulaval.ca/index.php/s/GgFwJrRNMtBqRp2/download", destfile = "../data/prot.RData", method = "auto")
 load("../data/prot.RData")
 ```
 
