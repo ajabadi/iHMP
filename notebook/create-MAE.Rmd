@@ -441,7 +441,9 @@ breakdown.metabo <- do.call("rbind", lapply(seq_along(former_metabo), function(x
 
 breakdown.prot <- do.call("rbind", lapply(seq_along(former_prot), function(x) breackdown.data(former_prot[[x]], "Proteomics"))) %>% unique
 
-all.breakdown <- rbind(breakdown.wgs, breakdown.metabo, breakdown.prot) 
+all.breakdown <- rbind(breakdown.wgs, breakdown.metabo, breakdown.prot)
+all.breakdown %>% group_by(omic, visit_study_disease_name) %>% summarise(N = n()) %>% spread(visit_study_disease_name, N) %>% View
+
 bk.list <- split(all.breakdown, f = all.breakdown$omic) %>% lapply(function(x) x %>% pull(sample_id) %>% unique)
 
 scom2 <- function(x,y) sum(x %in% y)
@@ -449,6 +451,9 @@ scom_list2 <- function(data_list1, data_list2 = data_list1) sapply(data_list1, f
 
 scom_list2(bk.list)
 UpSetR::upset(fromList(bk.list), order.by = "freq", sets = c("Metabolomics", "Proteomics", "WGS_taxonomicprofile", "WGS_genefamilies", "WGS_pathabundance", "WGS_pathcoverage", "WGS_ecs"))
+
+UpSetR::upset(fromList(bk.list), order.by = "freq", sets = c("Metabolomics", "Proteomics", "WGS_taxonomicprofile"))
+
 ```
 
 ```{r}
@@ -469,6 +474,8 @@ breakdown.ind.prot <- do.call("rbind", lapply(seq_along(former_prot), function(x
 all.breakdown.ind <- rbind(breakdown.ind.wgs, breakdown.ind.metabo, breakdown.ind.prot)
 bk.ind.list <- split(all.breakdown.ind, f = all.breakdown.ind$omic) %>% lapply(function(x) x %>% pull(subject_id) %>% unique)
 scom_list2(bk.ind.list) %>% View
+
+all.breakdown.ind %>% group_by(omic, visit_study_disease_name) %>% summarise(N = n()) %>% spread(visit_study_disease_name, N) %>% View
 ```
 
 
