@@ -20,6 +20,7 @@ library(magrittr)
 library(dplyr)
 library(stringr)
 library(readr)
+library(tibble)
 ```
 
 Helper functions:
@@ -42,7 +43,7 @@ name_mismatch <- function(data_list1, data_list2=data_list1) lapply(data_list1, 
 
 ## function to read tsv files into data.frames with first column as rownames
 fread_tsv <- function(file_list) {
-  out <- lapply(file_list, function(x) as.matrix(data.frame(fread(x), row.names = 1)))
+  out <- lapply(file_list, function(x) data.frame(fread(x), row.names = 1, check.names = FALSE))
   ## name the list with file name
   names(out) <- gsub(".tsv", "", basename(file_list))
   out
@@ -148,16 +149,6 @@ former_metabo <- lapply(former_metabo,change_metabo_colnames)
 ## read files as named list
 metab_list <- fread_tsv(metab_files)
 ```
-
-
-```{r}
-## unintended X added to colnames with subject_id that start with numbers
-lapply(metab_list, function(x) grep(pattern = "^X", colnames(x)))
-## drop it
-metab_list <- lapply(metab_list, function(x) set_colnames(x, gsub(pattern = "^X",replacement = "", colnames(x))))
-```
-
-Note : Why don't use `as.data.frame` instead of `data.frame` in the `fread_tsv` function or `data.frame(check.names = FALSE, ...)` to get rid of `X...`?
 
 Check all samples have metadata:
 
