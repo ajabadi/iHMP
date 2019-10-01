@@ -21,6 +21,8 @@ library(dplyr)
 library(stringr)
 library(readr)
 library(tibble)
+library(tidyr)
+library(UpSetR) ## for visualisations
 ```
 
 Helper functions:
@@ -53,8 +55,8 @@ fread_tsv <- function(file_list) {
 # To DO
 
 ----
-* Why are there no metadata for metabolomics data?
-* See why metadata is missing a lot of sample names in WGS data, and why there are duplicates
+<!-- * Why are there no metadata for metabolomics data? -->
+<!-- * See why metadata is missing a lot of sample names in WGS data, and why there are duplicates -->
 
 ----
 
@@ -77,14 +79,36 @@ Read files:
 
 ```{r}
 metadata <- data.frame(fread(metadata_file))
-metadata$new_ID <- paste0(metadata$sample_id, "_", metadata$visit_number)
+sum(duplicated(metadata))
+
+metadata
+## define capital ID based on visit number
+metadata$subject_ID <- paste0(metadata$subject_id, "_", metadata$visit_number)
+metadata$sample_ID <- paste0(metadata$sample_id, "_", metadata$visit_number)
+## keeping this for consistency of code
+metadata$new_ID <- paste0(metadata$subject_id, "_", metadata$visit_number)
 manifest <- data.frame(fread(manifest_file))
 ```
 
 ```{r}
-##TODO Why are there duplicate metadata
-## duplicate metadata
 sum(duplicated(metadata))
+## deduplicate
+metadata <- metadata[!duplicated(metadata),]
+sum(duplicated(metadata))
+dim(metadata)
+## sample_id seems to be specific enough - so maybe we don't really need new_ID?[#Antoine]
+sum(duplicated(metadata[,c('sample_id', 'data_type')]))
+## subject_id is not
+sum(duplicated(metadata[,c('subject_id', 'data_type')]))
+## in fact - sample_id somehow is already the new_ID we defined
+sum(duplicated(metadata[,c('subject_id', 'visit_number', 'data_type')]))
+## to avoid long names for samples, we'll define a generic sample name
+## as: generic subject index_visi#
+metadata$new_ID  <- paste0("ID_", 
+                        as.integer(factor(metadata$subject_id)),"_v", 
+                        metadata$visit_number)
+metadata[duplicated(metadata[,c('new_ID', 'data_type')]),]
+head(metadata$new_ID)
 ```
 
 * from Antoine: the same sample can be observed in different omics files.
@@ -107,16 +131,20 @@ metadata %>% filter(data_type == "Metabolomics") %>% head
 
 former metabo
 ```{r, eval=F}
-former_metab_files<- c("~/ls3x/Nextcloud/files/IBDMDB/ibd/metabolome/microbiome/analysis/new_metabo/all_C18_neg_compound.tsv","~/ls3x/Nextcloud/files/IBDMDB/ibd/metabolome/microbiome/analysis/new_metabo/all_C8_pos_compound.tsv", "~/ls3x/Nextcloud/files/IBDMDB/ibd/metabolome/microbiome/analysis/new_metabo/all_HILIC_neg_compound.tsv", "~/ls3x/Nextcloud/files/IBDMDB/ibd/metabolome/microbiome/analysis/new_metabo/all_HILIC_pos_compound.tsv")
-former_metabo <- lapply(former_metab_files, readr::read_tsv)
-names(former_metabo) <- str_remove(former_metab_files, ".*/all_") %>% str_remove("_compound.tsv")
-save(former_metabo, file = "../data/metabo_former.RData")
+# former_metab_files<- c("~/ls3x/Nextcloud/files/IBDMDB/ibd/metabolome/microbiome/analysis/new_metabo/all_C18_neg_compound.tsv","~/ls3x/Nextcloud/files/IBDMDB/ibd/metabolome/microbiome/analysis/new_metabo/all_C8_pos_compound.tsv", "~/ls3x/Nextcloud/files/IBDMDB/ibd/metabolome/microbiome/analysis/new_metabo/all_HILIC_neg_compound.tsv", "~/ls3x/Nextcloud/files/IBDMDB/ibd/metabolome/microbiome/analysis/new_metabo/all_HILIC_pos_compound.tsv")
+# former_metabo <- lapply(former_metab_files, readr::read_tsv)
+# names(former_metabo) <- str_remove(former_metab_files, ".*/all_") %>% str_remove("_compound.tsv")
+# save(former_metabo, file = "../data/metabo_former.RData")
 ```
 
 ```{r}
 download.file(url = "http://adcloud.genome.ulaval.ca/index.php/s/Xd6CY9pLNc2SRQC/download", destfile = "../data/metabo_former.RData", method = "auto")
+```
+
+```{r}
 load("../data/metabo_former.RData")
 ```
+
 
 * change colnames
 
@@ -126,14 +154,13 @@ change_metabo_colnames <- function(x){
     mutate(ID = str_remove(urls, ".*/") %>% str_remove("_.*")) %>%
     dplyr::select(ID, sample_id) %>% unique
   
-  # new_ID is now samppleid_visit_number
+  # new_ID is now sample_id
   metadata_metabo <- metadata %>% filter(data_type == "Metabolomics") %>%
     dplyr::select(sample_id, new_ID) %>% unique
   
   new_colnames <- colnames(x)[-1] %>% as.data.frame %>%  purrr::set_names("name") %>%
-    left_join(manifest_metabo, by = c("name"="ID")) %>% # add sample_id
-    left_join(metadata_metabo, by = c("sample_id" = "sample_id")) # add new_ID
-  
+    left_join(manifest_metabo, by = c("name"="ID")) %>%  # add sample_id
+    left_join(metadata_metabo, by = c("sample_id"="sample_id"))
   colnames(x) <- c("Compound", new_colnames$new_ID)
   x <- x %>% column_to_rownames("Compound")
   return(x)
@@ -143,11 +170,9 @@ former_metabo <- lapply(former_metabo,change_metabo_colnames)
 ```
 
 
-
-
 ```{r}
 ## read files as named list
-metab_list <- fread_tsv(metab_files)
+# metab_list <- fread_tsv(metab_files)
 ```
 
 Check all samples have metadata:
@@ -155,35 +180,35 @@ Check all samples have metadata:
 ```{r}
 ##TODO There are no metadata available for these samples
 ## number of samples in each dataset not present in metadata$new_ID
-lapply(metab_list, function(x) sum(! colnames(x) %in% metadata$new_ID))
+# lapply(metab_list, function(x) sum(! colnames(x) %in% metadata$new_ID))
 lapply(former_metabo, function(x) sum(! colnames(x) %in% metadata$new_ID))
 
 ## number of trimmed sample names (no visit) in each dataset not present in metadata$sample_id
-lapply(metab_list, function(x) sum(! gsub(pattern = "_.*$", "", x = colnames(x)) %in% metadata$sample_id))
+# lapply(metab_list, function(x) sum(! gsub(pattern = "_.*$", "", x = colnames(x)) %in% metadata$sample_id))
 ## so all samples are valid, only their visit record is not there
 ```
 
 ```{r}
-View(metab_list[[1]][1:10,1:10])
+View(former_metabo[[1]][1:10,1:10])
 ```
 
 ```{r}
 ## check that new ID is same as subjectid_visitnumber
-sum(metadata$new_ID != paste0(metadata$subject_id, "_", metadata$visit_number))
+# sum(metadata$new_ID != paste0(metadata$subject_id, "_", metadata$visit_number))
 ```
 
 ```{r}
 ## common samples
-scom_list(metab_list)
+# scom_list(metab_list)
 scom_list(former_metabo) # ok
 ## common features
-fcom_list(metab_list)
+# fcom_list(metab_list)
 fcom_list(former_metabo) # ok
 ```
 
 ```{r}
 ## adding 'metab_' to names to distinguish in MAE object
-names(metab_list) %<>% paste0("metab_", .)
+# names(metab_list) %<>% paste0("metab_", .)
 names(former_metabo) %<>% paste0("metab_", .)
 ```
 
@@ -192,25 +217,29 @@ names(former_metabo) %<>% paste0("metab_", .)
 
 ```{r}
 #example of mismatch, with no ECS here
-manifest %>% filter(str_detect(urls, "CSM7KOMV.*tsv"))
+# manifest %>% filter(str_detect(urls, "CSM7KOMV.*tsv"))
 ```
 
 ```{r, eval =F}
 # former colnames; files in Cloud folder
-WGS_former_files <- c("~/ls3x/Nextcloud/files/IBDMDB/ibd/genome/microbiome/wgs/analysis/hmmrc/new_files/ALL_pathabundance.tsv", "~/ls3x/Nextcloud/files/IBDMDB/ibd/genome/microbiome/wgs/analysis/hmmrc/new_files/ALL_pathcoverage.tsv",
-"~/ls3x/Nextcloud/files/IBDMDB/ibd/genome/microbiome/wgs/analysis/hmmrc/new_files/ALL_genefamilies.tsv",
-"~/ls3x/Nextcloud/files/IBDMDB/ibd/genome/microbiome/wgs/analysis/hmmrc/new_files/ALL_ecs.tsv", 
-"~/ls3x/Nextcloud/files/IBDMDB/ibd/genome/microbiome/wgs/analysis/hmscp/new_files/ALL_taxonomicprofile.tsv")
-WGS_former_data <- lapply(WGS_former_files, readr::read_tsv)
-names(WGS_former_data) <- WGS_former_files %>% str_remove(".*_") %>% str_remove(".tsv")
+# WGS_former_files <- c("~/ls3x/Nextcloud/files/IBDMDB/ibd/genome/microbiome/wgs/analysis/hmmrc/new_files/ALL_pathabundance.tsv", "~/ls3x/Nextcloud/files/IBDMDB/ibd/genome/microbiome/wgs/analysis/hmmrc/new_files/ALL_pathcoverage.tsv",
+# "~/ls3x/Nextcloud/files/IBDMDB/ibd/genome/microbiome/wgs/analysis/hmmrc/new_files/ALL_genefamilies.tsv",
+# "~/ls3x/Nextcloud/files/IBDMDB/ibd/genome/microbiome/wgs/analysis/hmmrc/new_files/ALL_ecs.tsv", 
+# "~/ls3x/Nextcloud/files/IBDMDB/ibd/genome/microbiome/wgs/analysis/hmscp/new_files/ALL_taxonomicprofile.tsv")
+# WGS_former_data <- lapply(WGS_former_files, readr::read_tsv)
+# names(WGS_former_data) <- WGS_former_files %>% str_remove(".*_") %>% str_remove(".tsv")
 
-save(WGS_former_data, file = "../data/wgs.RData")
+# save(WGS_former_data, file = "../data/wgs.RData")
 ```
 
 ```{r}
 download.file(url = "http://adcloud.genome.ulaval.ca/index.php/s/6pj7r6nG2qnyLXw/download", destfile = "../data/wgs.RData", method = "auto")
+```
+
+```{r}
 load("../data/wgs.RData")
 ```
+
 
 * change column
 
@@ -236,49 +265,42 @@ change_wgs_colnames <- function(x){
 former_wgs <- lapply(WGS_former_data,change_wgs_colnames)
 ```
 
-
 Same with WGS data:
 
 ```{r}
 ## read files as named list
-wgs_list <- fread_tsv(wgs_files)
+# wgs_list <- fread_tsv(wgs_files)
 ```
 
-```{r}
-## unintended X added to colnames with subject_id that start with numbers
-lapply(wgs_list, function(x) grep(pattern = "^X", colnames(x)))
-## drop it
-wgs_list <- lapply(wgs_list, function(x) set_colnames(x, gsub(pattern = "^X",replacement = "", colnames(x))))
-```
 
 ```{r}
-View(wgs_list[[3]][1:10,1:10])
+View(former_wgs[[3]][1:10,1:10])
 ```
 
 ```{r}
 ## common samples
-scom_list(wgs_list)
+# scom_list(wgs_list)
 scom_list(former_wgs)
 # common features
-fcom_list(wgs_list)
+# fcom_list(wgs_list)
 fcom_list(former_wgs)
 ```
 
 What are the non-matching ones?
 
 ```{r}
-wgs_mismatch <- name_mismatch(wgs_list)
-wgs_mismatch_former <- name_mismatch(former_wgs)
+# wgs_mismatch <- name_mismatch(wgs_list)
+# wgs_mismatch_former <- name_mismatch(former_wgs)
 ```
 
 from Antoine: I think we should drop ecs and the sample `1419f08f554e0c93f3b62fe90c246a08_13`
 ```{r}
 ## one-by-one mismatches can be inspected as follows:
 ## for pathcoverage and pathabundance
-wgs_mismatch$pathcoverage$pathabundance
+# wgs_mismatch$pathcoverage$pathabundance
 ## this suggests there's been 2 NA's in headers of one dataset
 
-wgs_mismatch$pathcoverage$WGS_community
+# wgs_mismatch$pathcoverage$WGS_community
 ## this suggests there's been 2 NA's in headers of one dataset, plus an extra sample
 ## which does not exist in metadata:
 "1419f08f554e0c93f3b62fe90c246a08_13" %in% metadata$new_ID
@@ -288,7 +310,7 @@ The main mismatch comes from ecs (~210 samples):
 
 ```{r}
 ## those from genefamilies not present in ecs
-head(wgs_mismatch$genefamilies$ecs)
+# head(wgs_mismatch$genefamilies$ecs)
 ```
 
  Are these valid new_ID's?
@@ -296,7 +318,7 @@ head(wgs_mismatch$genefamilies$ecs)
 ```{r}
 ##TODO There are no metadata available for these samples
 ## number of samples in each dataset not present in metadata$new_ID
-lapply(wgs_list, function(x) sum(! colnames(x) %in% metadata$new_ID))
+# lapply(wgs_list, function(x) sum(! colnames(x) %in% metadata$new_ID))
 ```
 
 Doesn't look like it
@@ -304,7 +326,7 @@ Doesn't look like it
 
 ```{r}
 ## number of genefamilies samples present in metadata
-sum(colnames(wgs_list$genefamilies) %in% metadata$new_ID)
+# sum(colnames(wgs_list$genefamilies) %in% metadata$new_ID)
 ```
 
 Shared samples with metabolites:
@@ -327,16 +349,19 @@ manifest %>% filter(str_detect(urls, "CSM67UEW_TR"))
 
 from Antoine, we should probably remove this missing sample.
 
-I'm assuming these are separate data so I don't worry about common features.
+```{r}
+## there is an NA in column names of one:
+former_wgs$genefamilies <- former_wgs$genefamilies[, !is.na(colnames(former_wgs$genefamilies))]
+```
 
 ```{r}
 ## adding 'WGS_' to names to distinguish in MAE object
 ## exclude WGS_community
-names(wgs_list) <- gsub(".tsv", "", basename(wgs_files))
-names(wgs_list) %<>% paste0("WGS_", .)
-## last one does already have WGS prefix
-names(wgs_list)[5] <- gsub(".tsv", "", basename(wgs_files)[5])
-names(wgs_list)
+# names(wgs_list) <- gsub(".tsv", "", basename(wgs_files))
+# names(wgs_list) %<>% paste0("WGS_", .)
+# ## last one does already have WGS prefix
+# names(wgs_list)[5] <- gsub(".tsv", "", basename(wgs_files)[5])
+# names(wgs_list)
 
 names(former_wgs) %<>% paste0("WGS_", .)
 ```
@@ -345,19 +370,19 @@ names(former_wgs) %<>% paste0("WGS_", .)
 
 ```{r}
 ## read files as named list
-prot_list <- fread_tsv(prot_files)
+# prot_list <- fread_tsv(prot_files)
 ```
 
 ```{r}
 ## this one seems to use new_ID = paste0(sample_id,"_",visit)?
-View(prot_list[[1]][1:10,1:10])
+# View(prot_list[[1]][1:10,1:10])
 ```
 
 ```{r}
 ## common samples
-scom_list(prot_list)
+# scom_list(prot_list)
 ## common features
-fcom_list(prot_list)
+# fcom_list(prot_list)
 ```
 
 [#Antoine] So I'm going with the one from `pep` ones. Also keeping the `kos` one as separate dataset, right?
@@ -366,11 +391,11 @@ from Antoine: As wgs `ecs`, I would drop `kos`.
 
 
 ```{r, eval = F}
-former_prot_files <- list("~/ls3x/Nextcloud/files/IBDMDB/ibd/proteome/microbiome/analysis/new_files/ALL_1pep.1p.tsv","~/ls3x/Nextcloud/files/IBDMDB/ibd/proteome/microbiome/analysis/new_files/ALL_1pep.5p.tsv","~/ls3x/Nextcloud/files/IBDMDB/ibd/proteome/microbiome/analysis/new_files/ALL_2pep.1p.tsv", "~/ls3x/Nextcloud/files/IBDMDB/ibd/proteome/microbiome/analysis/new_files/ALL_2pep.5p.tsv")
-former_prot <- lapply(former_prot_files, readr::read_tsv)
-
-names(former_prot) <- former_prot_files %>% str_remove(".*_") %>% str_remove(".tsv")
-save(former_prot, file = "../data/prot.RData")
+# former_prot_files <- list("~/ls3x/Nextcloud/files/IBDMDB/ibd/proteome/microbiome/analysis/new_files/ALL_1pep.1p.tsv","~/ls3x/Nextcloud/files/IBDMDB/ibd/proteome/microbiome/analysis/new_files/ALL_1pep.5p.tsv","~/ls3x/Nextcloud/files/IBDMDB/ibd/proteome/microbiome/analysis/new_files/ALL_2pep.1p.tsv", "~/ls3x/Nextcloud/files/IBDMDB/ibd/proteome/microbiome/analysis/new_files/ALL_2pep.5p.tsv")
+# former_prot <- lapply(former_prot_files, readr::read_tsv)
+# 
+# names(former_prot) <- former_prot_files %>% str_remove(".*_") %>% str_remove(".tsv")
+# save(former_prot, file = "../data/prot.RData")
 ```
 
 ```{r}
@@ -404,16 +429,16 @@ former_prot <- lapply(former_prot,change_prot_colnames)
 
 ```{r}
 ## keeping 2pep_5p_FDR_5ppm and kos datasets
-prot_list <- prot_list[4:5]
+# prot_list <- prot_list[4:5]
 
 ## adding 'prot_' to names to distinguish in MAE object
-names(prot_list) %<>% paste0("prot_", .)
+# names(prot_list) %<>% paste0("prot_", .)
 ```
 
 ```{r}
 ##TODO There are no metadata available for these samples
 ## number of samples in each dataset not present in metadata$new_ID
-lapply(prot_list, function(x) sum(! colnames(x) %in% metadata$new_ID))
+# lapply(prot_list, function(x) sum(! colnames(x) %in% metadata$new_ID))
 lapply(former_prot, function(x) sum(! colnames(x) %in% metadata$new_ID))
 ```
 
@@ -469,13 +494,69 @@ scom_list2(bk.ind.list) %>% View
 all.breakdown.ind %>% group_by(omic, visit_study_disease_name) %>% summarise(N = n()) %>% spread(visit_study_disease_name, N) %>% View
 ```
 
+```{r}
+## MAE prefers matrices over data.frames
+former_metabo <- lapply(former_metabo, as.matrix)
+former_prot <- lapply(former_prot, as.matrix)
+former_wgs <- lapply(former_wgs, as.matrix)
+```
+
+Note: rownames of former_wgs[3] are probably too long for visualisations.
+
+```{r}
+## Note: rownames of former_wgs[3] are too long:
+## 
+## almost all have 'UniRef' so replacing with a short version of it
+# sum(!grepl(pattern = "UniRef", x = rownames(former_wgs[[3]])))
+# rownames(former_wgs[[3]]) <- paste0("UniRef_", seq_len(dim(former_wgs[[3]])[1]))
+```
+
+```{r}
+# to airdrop to Kim-Anh
+# save(former_metabo, former_prot, former_wgs, file = "../output/iHMP-assays.RData")
+```
+
+```{r}
+# load("../output/iHMP-assays.RData")
+```
 
 Create MAE object:
 
 ```{r}
-iHMP <- MultiAssayExperiment(experiments = ExperimentList(c(prot_list, wgs_list, metab_list))
-                     #, colData = data.frame(metadata, row.names = "new_ID") ## this should use a row.name that matches the sample names - not possible at the moment because there are a lot of duplicated and we don't know which ones we wanna use
-                     # as sample names
-                     )
+library(MultiAssayExperiment)
+## sample data
+coldata <- data.frame(metadata[!duplicated(metadata$new_ID),], row.names = "new_ID")
 ```
+
+```{r}
+iHMP <- MultiAssayExperiment(experiments = ExperimentList(c(former_metabo, list(proteomic=former_prot[[4]]), former_wgs))
+                     , colData = coldata, metadata = list(Description = "new_ID is as.integer(factor(subject_id)) _ visit_number, it uniquely corresponds to sample_id. Only made because it is a shorter string", Note = "Feature names in WGS_genefamilies could be too long. You might consider changing them. There's 395 metadata records not present in current datasets"))
+```
+
+
+```{r}
+head(sampleMap(iHMP))
+```
+
+```{r}
+## matching across all
+iHMP_matching <- MatchedAssayExperiment(iHMP)
+iHMP_matching
+```
+
+```{r}
+## matching across some assays
+
+## get the name of assays:
+dput(names(iHMP))
+c("metab_C18_neg", "metab_C8_pos", "metab_HILIC_neg", "metab_HILIC_pos", 
+"proteomic", "WGS_pathabundance", "WGS_pathcoverage", "WGS_genefamilies", 
+"WGS_ecs", "WGS_taxonomicprofile")
+
+## subset and get matched ones (note the ``[,,NAMES]` subset method)
+iHMP_matching_metab_prot <- MatchedAssayExperiment(iHMP[,,c("metab_C18_neg", "metab_C8_pos", "metab_HILIC_neg", "metab_HILIC_pos", 
+"proteomic")])
+iHMP_matching_metab_prot
+```
+
 
