@@ -517,7 +517,17 @@ Note: rownames of former_wgs[3] are probably too long for visualisations.
 ```
 
 ```{r}
-# load("../output/iHMP-assays.RData")
+load("../output/iHMP-assays.RData")
+```
+```{r}
+library(data.table)
+metadata_file <- '../data/metadata.tsv'
+metadata <- data.frame(fread(metadata_file))
+metadata <- metadata[!duplicated(metadata),]
+## as: generic subject index_visi#
+metadata$new_ID  <- paste0("ID_", 
+                        as.integer(factor(metadata$subject_id)),"_v", 
+                        metadata$visit_number)
 ```
 
 Create MAE object:
@@ -559,4 +569,65 @@ iHMP_matching_metab_prot <- MatchedAssayExperiment(iHMP[,,c("metab_C18_neg", "me
 iHMP_matching_metab_prot
 ```
 
+```{r}
+## function to get a list of matrices of transposed assays from MAE - or the single matrix
+tr_assays <- function(mae, assays) {
+  if(length(assays)==1) {
+    t(assay(mae, assays))
+  } else {
+  assy <- as.list(assays)
+  if(is.numeric(assays)) {
+    names(assy) <- names(mae)[assays]
+  } else if (is.character(assays)) {
+    names(assy) <- assays
+  } else {
+    stop("please provide integer or character vector for assays")
+  }
+  
+  lapply(assy, function(x) t(assay(mae, x)))
+  }
+}
+```
 
+Run a pca:
+
+```{r}
+library(mixOmics)
+
+pca.res <- pca(X = tr_assays(iHMP_matching, "proteomic"), ncomp=6)
+
+plot(pca.res)
+
+plotIndiv(pca.res, group = iHMP_matching$visit_study_disease_name, legend = TRUE)
+```
+
+
+Run a block.splsda:
+
+```{r}
+library(mixOmics)
+library(magrittr)
+dput(names(iHMP_matching))
+c("metab_C18_neg", "metab_C8_pos", "metab_HILIC_neg", "metab_HILIC_pos", 
+"proteomic", "WGS_pathabundance", "WGS_pathcoverage", "WGS_genefamilies", 
+"WGS_ecs", "WGS_taxonomicprofile")
+X = tr_assays(mae = iHMP_matching, assays = c(1,5,6,10))
+## same as
+X = tr_assays(mae = iHMP_matching, assays = names(iHMP_matching)[c(1,5,6,10)])
+Y = iHMP_matching$visit_study_disease_name
+keepX = rep(list(c(50,50)), length(X)) %>% set_names(names(X))
+diablo.res <- block.splsda(X = X, Y = Y, ncomp = 2, keepX = keepX, near.zero.var = TRUE)
+plotIndiv(diablo.res)
+```
+
+Run a spls:
+
+```{r}
+library(mixOmics)
+library(magrittr)
+
+X = tr_assays(mae = iHMP_matching, "WGS_ecs")
+Y = tr_assays(mae = iHMP_matching, "proteomic")
+spls.res <- spls(X = X, Y = Y, ncomp=2, keepX = c(50, 50), keepY = c(50, 50))
+plotIndiv(spls.res)
+```
